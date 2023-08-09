@@ -4,6 +4,13 @@ verify_ssl = true
 name = "pypi"
 
 [packages]
+pandas = "*"
+numpy = "*"
+neptune = "*"
+matplotlib = "*"
+scikit-learn = "*"
+neptune-tensorflow-keras = "*"
+tensorflow = "*"
 
 [dev-packages]
 
