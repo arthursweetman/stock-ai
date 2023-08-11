@@ -13,17 +13,35 @@ import numpy as np
 import pandas as pd
 
 def optimize_gains(data):
+
+    # Step 1: Calculate "Uphill climb distance"
     data = find_local_extrema(data)
-    print(data)
+
+    # Filter out any values that are not local extrema
+    data = data.loc[data['local_extrema'] != "---"]
+
+    if data.reset_index().loc[0]['local_extrema'] == 'max':
+        data = data.reset_index().drop(0)
+
+    maxs = data.loc[data['local_extrema'] == 'max'].reset_index()['Close']
+    mins = data.loc[data['local_extrema'] == 'min'].reset_index()['Close']
+    data = pd.DataFrame({
+        'local_min': mins,
+        'local_max': maxs
+    })
+    uphill_climbs = data['local_max'] - data['local_min']
+    uphill_climb_distance = sum(uphill_climbs)
+
+    # print(data, '\n', uphill_climbs, '\n', uphill_climb_distance)
+
+
+
 
 """
-Finds and identified the local maxima and minima for a given time-series data set
+Finds and identifies the local maxima and minima for a given time-series data set
 Returns the same dataset with a new column identifying the local max and mins
 """
 def find_local_extrema(data):
-
-    # Step 1: Calculate "Uphill climb distance"
-
     future = data.copy()
     past = data.copy()
 
@@ -50,9 +68,8 @@ def find_local_extrema(data):
 
 
 
-
 if __name__ == "__main__":
     data = pd.DataFrame({
-        'Close': [1, 2, 3, 4, 5, 6, 5, 4, 5, 6, 7]
+        'Close': [1, 2, 3, 4, 5, 6, 5, 4, 5, 6, 7,8,9,10,9,8,7,6,5,4,2,3,4,5,7,3]
     })
     optimize_gains(data)
