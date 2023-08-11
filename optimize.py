@@ -25,14 +25,17 @@ def optimize_gains(data):
 
     maxs = data.loc[data['local_extrema'] == 'max'].reset_index()['Close']
     mins = data.loc[data['local_extrema'] == 'min'].reset_index()['Close']
+
+    # t = maxs.loc[maxs.index % 2 != 0]
+
     data = pd.DataFrame({
         'local_min': mins,
         'local_max': maxs
-    })
+    }).dropna()  # This dropna removes edge cases where a min or a max do not have a partner
     uphill_climbs = data['local_max'] - data['local_min']
     uphill_climb_distance = sum(uphill_climbs)
 
-    # print(data, '\n', uphill_climbs, '\n', uphill_climb_distance)
+    print(data, '\n', uphill_climbs, '\n', uphill_climb_distance)
 
 
 
@@ -54,7 +57,28 @@ def find_local_extrema(data):
     past = past.drop(len(past)-1)
     data['past'] = past
 
-    local_extreme = np.full(len(data),'---')
+    # Repeat points will mess up the local extrema calculations, giving consecutive mins or maxs
+    # Solution: delete the rows with consecutive points
+    repeat_points = ~((data['Close'] == data['future']) & (data['Close'] == data['past']) |
+                      (data['Close'] != data['future']) & (data['Close'] == data['past']))
+
+    # If there are repeat points, we need to re-calculate the 'past' and 'future' values
+    if sum((~repeat_points) > 0):
+        data = data.loc[repeat_points].reset_index().drop(columns = 'index')
+        data = data[['Close']]
+        future = data.copy()
+        past = data.copy()
+
+        future.loc[len(future.index)] = [np.NaN]
+        future = future.drop(0).reset_index().drop(columns='index')
+        data['future'] = future
+
+        past.loc[-1] = [np.NaN]
+        past.index += 1
+        past = past.drop(len(past) - 1)
+        data['past'] = past
+
+    local_extreme = np.full(len(data), '---')
     maxs = (data['Close'] > data['future']) & (data['Close'] > data['past'])
     local_extreme[maxs] = 'max'
     mins = (data['Close'] < data['future']) & (data['Close'] < data['past'])
@@ -69,7 +93,8 @@ def find_local_extrema(data):
 
 
 if __name__ == "__main__":
-    data = pd.DataFrame({
-        'Close': [1, 2, 3, 4, 5, 6, 5, 4, 5, 6, 7,8,9,10,9,8,7,6,5,4,2,3,4,5,7,3]
-    })
+    # data = pd.DataFrame({
+    #     'Close': [1, 2, 3, 4, 5, 6, 5, 4, 5, 6, 7,8,9,10,9,8,7,6,5,4,2,3,4,5,7,3]
+    # })
+    data = pd.read_csv("AAPL.csv")[["Close"]]  # , index_col="Date")
     optimize_gains(data)
