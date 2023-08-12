@@ -18,8 +18,9 @@ from sklearn.preprocessing import StandardScaler
 from neptune.integrations.tensorflow_keras import NeptuneCallback
 from keras import Input, Model
 from keras.layers import LSTM, Dense
+import pickle
 
-
+USE_CACHED_MODEL = True
 NEPTUNE_API_TOKEN = "eyJhcGlfYWRkcmVzcyI6Imh0dHBzOi8vYXBwLm5lcHR1bmUuYWkiLCJhcGlfdXJsIjoiaHR0cHM6Ly9hcHAubmVwdHVuZS5haSIsImFwaV9rZXkiOiI2NzExZDczNS1hOGFhLTQ2NjItYjNjOS1hMjc4MzRlM2NmYmIifQ=="
 project = neptune.init_project(project="arthursweetman/stock-ai", api_token=NEPTUNE_API_TOKEN)
 myProject = "arthursweetman/stock-ai"
@@ -157,8 +158,8 @@ window_size = 50
 
 layer_units = 50
 optimizer = "adam"
-cur_epochs = 15
-cur_batch_size = 20
+cur_epochs = 5  # Previously set to 15
+cur_batch_size = 32  # Previously set to 20
 
 cur_LSTM_args = {
     "units": layer_units,
@@ -182,7 +183,7 @@ scaler = StandardScaler()
 scaled_data = scaler.fit_transform(stockprices[["Close"]])
 scaled_data_train = scaled_data[: train.shape[0]]
 
-# We use past 50 days’ stock prices for our training to predict the 51th day's closing price.
+# We use past 50 days’ stock prices for our training to predict the 51st day's closing price.
 X_train, y_train = extract_seqX_outcomeY(scaled_data_train, window_size, window_size)
 
 ### Build a LSTM model and log training progress to Neptune ###
@@ -204,16 +205,22 @@ def Run_LSTM(X_train, layer_units=50):
 
 model = Run_LSTM(X_train, layer_units=layer_units)
 
-history = model.fit(
-    X_train,
-    y_train,
-    epochs=cur_epochs,
-    batch_size=cur_batch_size,
-    verbose=1,
-    validation_split=0.1,
-    shuffle=True,
-    callbacks=[neptune_callback],
-)
+if USE_CACHED_MODEL:
+    with open('./LSTM_model', 'rb') as file:
+        history = pickle.load(file)
+else:
+    history = model.fit(
+        X_train,
+        y_train,
+        epochs=cur_epochs,
+        batch_size=cur_batch_size,
+        verbose=1,
+        validation_split=0.1,
+        shuffle=True,
+        callbacks=[neptune_callback],
+    )
+    with open('./LSTM_model', 'wb') as file:
+        pickle.dump(history, file)
 
 # predict stock prices using past window_size stock prices
 def preprocess_testdat(data=stockprices, scaler=scaler, window_size=window_size, test=test):
