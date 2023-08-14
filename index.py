@@ -13,9 +13,7 @@ example1 taken from: https://neptune.ai/blog/predicting-stock-prices-using-machi
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-import neptune
 from sklearn.preprocessing import StandardScaler
-from neptune.integrations.tensorflow_keras import NeptuneCallback
 from keras import Input, Model
 from keras.layers import LSTM, Dense
 import pickle
@@ -25,13 +23,8 @@ predictor_vars = ['Close','volume']
 window_size = 250
 N_forecast = 50
 USE_CACHED_MODEL = False
-NEPTUNE_API_TOKEN = "eyJhcGlfYWRkcmVzcyI6Imh0dHBzOi8vYXBwLm5lcHR1bmUuYWkiLCJhcGlfdXJsIjoiaHR0cHM6Ly9hcHAubmVwdHVuZS5haSIsImFwaV9rZXkiOiI2NzExZDczNS1hOGFhLTQ2NjItYjNjOS1hMjc4MzRlM2NmYmIifQ=="
-project = neptune.init_project(project="arthursweetman/stock-ai", api_token=NEPTUNE_API_TOKEN)
-myProject = "arthursweetman/stock-ai"
-# run = neptune.init_run(project="arthursweetman/stock-ai", api_token=NEPTUNE_API_TOKEN)
 
 # %% Train-Test split for time-series
-# stockprices = pd.read_csv("AAPL.csv", index_col="Date")
 stockprices = stock_API.data
 stockprices.rename(columns = {'adjclose' : 'Close'}, inplace = True)
 stockprices = stockprices[predictor_vars]
@@ -98,10 +91,6 @@ def calculate_perf_metrics(var):
         np.array(stockprices[train_size:][var]),
     )
 
-    ## Log to Neptune
-    run["RMSE"] = rmse
-    run["MAPE (%)"] = mape
-
     return rmse, mape
 
 
@@ -112,62 +101,6 @@ def plot_stock_trend(var, cur_title, stockprices=stockprices):
     plt.axis("tight")
     plt.ylabel("Stock Price ($)")
 
-    ## Log to Neptune
-    run["Plot of Stock Predictions"].upload(
-        neptune.types.File.as_image(ax.get_figure())
-    )
-
-
-################### # Initialize a Neptune run
-# run = neptune.init_run(
-#     project=myProject,
-#     name="SMA",
-#     description="stock-prediction-machine-learning",
-#     tags=["stockprediction", "MA_Simple", "neptune"],
-#     api_token=NEPTUNE_API_TOKEN
-# )
-#
-# window_var = f"{window_size}day"
-#
-# stockprices[window_var] = stockprices["Close"].rolling(window_size).mean()
-#
-# ### Include a 200-day SMA for reference
-# stockprices["200day"] = stockprices["Close"].rolling(200).mean()
-#
-# ### Plot and performance metrics for SMA model
-# plot_stock_trend(var=window_var, cur_title="Simple Moving Averages")
-# rmse_sma, mape_sma = calculate_perf_metrics(var=window_var)
-#
-# ### Stop the run
-# run.stop()
-#
-# # Initialize a Neptune run
-# run = neptune.init_run(
-#     project=myProject,
-#     name="EMA",
-#     description="stock-prediction-machine-learning",
-#     tags=["stockprediction", "MA_Exponential", "neptune"],
-#     api_token=NEPTUNE_API_TOKEN
-# )
-#
-# ###### Exponential MA
-# window_ema_var = f"{window_var}_EMA"
-#
-# # Calculate the 50-day exponentially weighted moving average
-# stockprices[window_ema_var] = (
-#     stockprices["Close"].ewm(span=window_size, adjust=False).mean()
-# )
-# stockprices["200day"] = stockprices["Close"].rolling(200).mean()
-#
-# ### Plot and performance metrics for EMA model
-# plot_stock_trend(
-#     var=window_ema_var, cur_title="Exponential Moving Averages")
-# rmse_ema, mape_ema = calculate_perf_metrics(var=window_ema_var)
-#
-# ### Stop the run
-# run.stop()
-
-############################
 
 layer_units = 50
 optimizer = "adam"
@@ -181,16 +114,6 @@ cur_LSTM_args = {
     "epochs": cur_epochs,
 }
 
-# Initialize a Neptune run
-run = neptune.init_run(
-    project=myProject,
-    name="LSTM",
-    description="stock-prediction-machine-learning",
-    tags=["stockprediction", "LSTM", "neptune"],
-    api_token=NEPTUNE_API_TOKEN
-)
-run["LSTM_args"] = cur_LSTM_args
-
 # Scale our dataset
 scaler = StandardScaler()
 scaled_data = scaler.fit_transform(stockprices)
@@ -199,8 +122,7 @@ scaled_data_train = scaled_data[: train.shape[0]]
 # We use past 50 days’ stock prices for our training to predict the 51st day's closing price.
 X_train, y_train = extract_seqX_outcomeY(scaled_data_train, window_size, N_forecast)
 
-### Build a LSTM model and log training progress to Neptune ###
-neptune_callback = NeptuneCallback(run=run)
+### Build a LSTM model ###
 
 def Run_LSTM(X_train, layer_units=layer_units):
     inp = Input(shape=(X_train.shape[1], 1))
@@ -229,7 +151,6 @@ else:
         verbose=1,
         validation_split=0.1,
         shuffle=True,
-        callbacks=[neptune_callback],
     )
     with open('./LSTM_model', 'wb') as file:
         pickle.dump(history, file)
@@ -265,11 +186,7 @@ test = pd.DataFrame({
 rmse_lstm = calculate_rmse(np.array(test["Close"]), np.array(test["Predictions_lstm"]))
 mape_lstm = calculate_mape(np.array(test["Close"]), np.array(test["Predictions_lstm"]))
 
-### Log to Neptune
-run["RMSE"] = rmse_lstm
-run["MAPE (%)"] = mape_lstm
-
-### Plot prediction and true trends and log to Neptune
+### Plot prediction and true trends
 # q = train["Close"][len(train) - window_size:]
 def plot_stock_trend_lstm(train, test):
     fig = plt.figure(figsize = (20,10))
@@ -281,10 +198,4 @@ def plot_stock_trend_lstm(train, test):
     plt.ylabel("Stock Price ($)")
     plt.legend(loc="upper left")
 
-    ## Log image to Neptune
-    run["Plot of Stock Predictions"].upload(neptune.types.File.as_image(fig))
-
 plot_stock_trend_lstm(train, test)
-
-### Stop the run after logging
-run.stop()
