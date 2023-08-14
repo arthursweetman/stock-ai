@@ -11,6 +11,7 @@ matplotlib = "*"
 scikit-learn = "*"
 neptune-tensorflow-keras = "*"
 tensorflow = "*"
+yahoo-fin = "*"
 
 [dev-packages]
 

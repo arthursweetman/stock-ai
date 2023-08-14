@@ -19,9 +19,11 @@ from neptune.integrations.tensorflow_keras import NeptuneCallback
 from keras import Input, Model
 from keras.layers import LSTM, Dense
 import pickle
+import stock_API
 
-window_size = 100
-N_forecast = 100
+predictor_vars = ['Close','volume']
+window_size = 250
+N_forecast = 50
 USE_CACHED_MODEL = False
 NEPTUNE_API_TOKEN = "eyJhcGlfYWRkcmVzcyI6Imh0dHBzOi8vYXBwLm5lcHR1bmUuYWkiLCJhcGlfdXJsIjoiaHR0cHM6Ly9hcHAubmVwdHVuZS5haSIsImFwaV9rZXkiOiI2NzExZDczNS1hOGFhLTQ2NjItYjNjOS1hMjc4MzRlM2NmYmIifQ=="
 project = neptune.init_project(project="arthursweetman/stock-ai", api_token=NEPTUNE_API_TOKEN)
@@ -29,7 +31,10 @@ myProject = "arthursweetman/stock-ai"
 # run = neptune.init_run(project="arthursweetman/stock-ai", api_token=NEPTUNE_API_TOKEN)
 
 # %% Train-Test split for time-series
-stockprices = pd.read_csv("AAPL.csv", index_col="Date")
+# stockprices = pd.read_csv("AAPL.csv", index_col="Date")
+stockprices = stock_API.data
+stockprices.rename(columns = {'adjclose' : 'Close'}, inplace = True)
+stockprices = stockprices[predictor_vars]
 
 test_ratio = 0.2
 training_ratio = 1 - test_ratio
@@ -39,8 +44,8 @@ test_size = int(test_ratio * len(stockprices))
 print(f"train_size: {train_size}")
 print(f"test_size: {test_size}")
 
-train = stockprices[:train_size][["Close"]]
-test = stockprices[train_size:][["Close"]]
+train = stockprices[:train_size]
+test = stockprices[train_size:]
 
 
 def extract_seqX_outcomeY(data, N_lookback, N_forecast):
@@ -166,7 +171,7 @@ def plot_stock_trend(var, cur_title, stockprices=stockprices):
 
 layer_units = 50
 optimizer = "adam"
-cur_epochs = 10  # Previously set to 15
+cur_epochs = 5  # Previously set to 15
 cur_batch_size = 32  # Previously set to 20
 
 cur_LSTM_args = {
@@ -188,7 +193,7 @@ run["LSTM_args"] = cur_LSTM_args
 
 # Scale our dataset
 scaler = StandardScaler()
-scaled_data = scaler.fit_transform(stockprices[["Close"]])
+scaled_data = scaler.fit_transform(stockprices)
 scaled_data_train = scaled_data[: train.shape[0]]
 
 # We use past 50 days’ stock prices for our training to predict the 51st day's closing price.
@@ -197,7 +202,7 @@ X_train, y_train = extract_seqX_outcomeY(scaled_data_train, window_size, N_forec
 ### Build a LSTM model and log training progress to Neptune ###
 neptune_callback = NeptuneCallback(run=run)
 
-def Run_LSTM(X_train, layer_units=50):
+def Run_LSTM(X_train, layer_units=layer_units):
     inp = Input(shape=(X_train.shape[1], 1))
 
     x = LSTM(units=layer_units, return_sequences=True)(inp)
@@ -206,17 +211,16 @@ def Run_LSTM(X_train, layer_units=50):
     model = Model(inp, out)
 
     # Compile the LSTM neural net
-    model.compile(loss="mean_squared_error", optimizer="adam")
+    model.compile(loss="mean_squared_error", optimizer=optimizer)
 
     return model
 
-
-model = Run_LSTM(X_train, layer_units=layer_units)
 
 if USE_CACHED_MODEL:
     with open('./LSTM_model', 'rb') as file:
         history = pickle.load(file)
 else:
+    model = Run_LSTM(X_train, layer_units=layer_units)
     history = model.fit(
         X_train,
         y_train,
@@ -232,7 +236,7 @@ else:
 
 # predict stock prices using past window_size stock prices
 def preprocess_testdat(data=stockprices, scaler=scaler, window_size=window_size, test=test):
-    raw = data["Close"][len(data) - len(test) - window_size:].values
+    raw = data[len(data) - len(test) - window_size:].values
     raw = raw.reshape(-1,1)
     raw = scaler.transform(raw)
 

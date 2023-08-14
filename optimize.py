@@ -59,12 +59,12 @@ def find_local_extrema(data):
 
     # Repeat points will mess up the local extrema calculations, giving consecutive mins or maxs
     # Solution: delete the rows with consecutive points
-    repeat_points = ~((data['Close'] == data['future']) & (data['Close'] == data['past']) |
-                      (data['Close'] != data['future']) & (data['Close'] == data['past']))
+    repeat_points = ((data['Close'] == data['future']) & (data['Close'] == data['past']) |
+                     (data['Close'] != data['future']) & (data['Close'] == data['past']))
 
     # If there are repeat points, we need to re-calculate the 'past' and 'future' values
-    if sum((~repeat_points) > 0):
-        data = data.loc[repeat_points].reset_index().drop(columns = 'index')
+    if sum((repeat_points) > 0):
+        data = data.loc[~repeat_points].reset_index().drop(columns = 'index')
         data = data[['Close']]
         future = data.copy()
         past = data.copy()
