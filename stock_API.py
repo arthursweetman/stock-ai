@@ -12,7 +12,7 @@ FRED_API_KEY = "492c019400f8f7963ee131c745be7685"
 # API key for the Alpha Vantage API
 # __API_KEY = "OR59ZKH3MZH9S2GU"
 
-start_date = "01/01/2023"
+start_date = "01/01/2000"
 
 def fred_date_format(old_format):
     return old_format[6:10] + "-" + old_format[0:2] + "-" + old_format[3:5]
@@ -67,7 +67,7 @@ UMCSENT = pf.get_series(series_id = "UMCSENT",
                         api_key = FRED_API_KEY,
                         observation_start = fred_date_format(start_date))[['date','value']].set_index('date').rename(columns={'value':'UMCSENT'})
 
-data = ticker.join([VIX, USDX, EFFR])
+data = ticker.join([VIX, USDX, EFFR], how="inner").dropna()
 
 
 if __name__ == "__main__":

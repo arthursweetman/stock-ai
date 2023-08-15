@@ -21,7 +21,7 @@ import stock_API
 
 
 # ------------ Global variables ------------
-predictor_vars = ['Close', 'volume']
+predictor_vars = ['Close', 'volume', 'VIX', 'USDX', 'EFFR']
 window_size = 50
 N_forecast = 20
 USE_CACHED_MODEL = True
@@ -150,10 +150,10 @@ plt.plot(actual[:,0], '--', label = 'Actual')
 plt.legend()
 plt.savefig("predicted_prices_forecast")
 
-preds = pd.DataFrame({
-    'Close': test['Close'],
-    'volume': test['volume'],
-    'pred': predicted_price.reshape(-1)
-}).to_csv("predictions.csv")
+# preds = pd.DataFrame({
+#     'Close': test['Close'],
+#     'volume': test['volume'],
+#     'pred': predicted_price.reshape(-1)
+# }).to_csv("predictions.csv")
 
 print("Done!")
