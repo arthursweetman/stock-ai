@@ -9,22 +9,31 @@ This program is meant to be a predictive robot for the stock market to aid
 example1 taken from: https://neptune.ai/blog/predicting-stock-prices-using-machine-learning
 
 """
-
+import keras.optimizers
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-from sklearn.preprocessing import StandardScaler
-from keras import Input, Model
-from keras.layers import LSTM, Dense
+from sklearn.preprocessing import StandardScaler, MinMaxScaler
+from keras import Input, Model, Sequential, optimizers
+from keras.layers import LSTM, Dense, Dropout
 import pickle
 import stock_API
 
-predictor_vars = ['Close','volume']
-window_size = 250
-N_forecast = 50
-USE_CACHED_MODEL = False
 
-# %% Train-Test split for time-series
+# ------------ Global variables ------------
+predictor_vars = ['Close', 'volume']
+window_size = 50
+N_forecast = 20
+USE_CACHED_MODEL = True
+
+cur_LSTM_args = {
+    "units": 150,
+    "optimizer": "adagrad",
+    "batch_size": 16,
+    "epochs": 2
+}
+
+# ------------ Train-Test split for time-series ------------
 stockprices = stock_API.data
 stockprices.rename(columns = {'adjclose' : 'Close'}, inplace = True)
 stockprices = stockprices[predictor_vars]
@@ -41,99 +50,51 @@ train = stockprices[:train_size]
 test = stockprices[train_size:]
 
 
-def extract_seqX_outcomeY(data, N_lookback, N_forecast):
+# ------------ Functions to be used ------------
+def extract_seqX_outcomeY(data, N_lookback):
     """
     Split time-series into training sequence X and outcome values Y
     Args:
         data - dataset
         N - window size, e.g., 50 for 50 days of historical stock prices
-        N_forecast - number of days to predict in the future
+        (discontinued) N_forecast - number of days to predict in the future
         (discontinued) offset - position to start the split
     """
     X, y = [], []
 
-    for i in range(N_lookback, len(data) - N_forecast + 1):
+    for i in range(N_lookback, len(data)):
         X.append(data[i - N_lookback : i])
-        y.append(data[i : i + N_forecast])
+        y.append(data.iloc[i]['Close'])
 
     return np.array(X), np.array(y)
 
 
-# -------------- Calculate the metrics' RMSE and MAPE --------------
+# ------------ Scale our dataset ------------
+scalers = {}
+scaled_data = pd.DataFrame()
+for col in stockprices:  # Consider scaling only to training data
+    scaler = MinMaxScaler().fit(stockprices[[col]])
+    scaled_data[[col]] = scaler.transform(stockprices[[col]])
+    scalers[col] = scaler
 
-
-def calculate_rmse(y_true, y_pred):
-    """
-    Calculate the Root Mean Squared Error (RMSE)
-    """
-    rmse = np.sqrt(np.mean((y_true - y_pred) ** 2))
-    return rmse
-
-
-def calculate_mape(y_true, y_pred):
-    """
-    Calculate the Mean Absolute Percentage Error (MAPE) %
-    """
-    y_pred, y_true = np.array(y_pred), np.array(y_true)
-    mape = np.mean(np.abs((y_true - y_pred) / y_true)) * 100
-    return mape
-
-
-def calculate_perf_metrics(var):
-    ### RMSE
-    rmse = calculate_rmse(
-        np.array(stockprices[train_size:]["Close"]),
-        np.array(stockprices[train_size:][var]),
-    )
-    ### MAPE
-    mape = calculate_mape(
-        np.array(stockprices[train_size:]["Close"]),
-        np.array(stockprices[train_size:][var]),
-    )
-
-    return rmse, mape
-
-
-def plot_stock_trend(var, cur_title, stockprices=stockprices):
-    ax = stockprices[["Close", var, "200day"]].plot(figsize=(20, 10))
-    plt.grid(False)
-    plt.title(cur_title)
-    plt.axis("tight")
-    plt.ylabel("Stock Price ($)")
-
-
-layer_units = 50
-optimizer = "adam"
-cur_epochs = 5  # Previously set to 15
-cur_batch_size = 32  # Previously set to 20
-
-cur_LSTM_args = {
-    "units": layer_units,
-    "optimizer": optimizer,
-    "batch_size": cur_batch_size,
-    "epochs": cur_epochs,
-}
-
-# Scale our dataset
-scaler = StandardScaler()
-scaled_data = scaler.fit_transform(stockprices)
 scaled_data_train = scaled_data[: train.shape[0]]
 
 # We use past 50 days’ stock prices for our training to predict the 51st day's closing price.
-X_train, y_train = extract_seqX_outcomeY(scaled_data_train, window_size, N_forecast)
+X_train, y_train = extract_seqX_outcomeY(scaled_data_train, window_size)
 
-### Build a LSTM model ###
+# ------------ Build a LSTM model ------------
+def Run_LSTM(X_train, layer_units=cur_LSTM_args['units']):
 
-def Run_LSTM(X_train, layer_units=layer_units):
-    inp = Input(shape=(X_train.shape[1], 1))
+    inp = Input(shape=(X_train.shape[1], X_train.shape[2]))
 
     x = LSTM(units=layer_units, return_sequences=True)(inp)
     x = LSTM(units=layer_units)(x)
-    out = Dense(N_forecast, activation="linear")(x)  # Originally was Dense(1, activation="linear")(x)
+    out = Dense(1, activation="linear")(x)
     model = Model(inp, out)
 
+    # opt = optimizers.Adagrad(learning_rate=0.01)  # Adagrad optimizer based on published paper
     # Compile the LSTM neural net
-    model.compile(loss="mean_squared_error", optimizer=optimizer)
+    model.compile(loss="mean_squared_error", optimizer='adam')
 
     return model
 
@@ -141,61 +102,58 @@ def Run_LSTM(X_train, layer_units=layer_units):
 if USE_CACHED_MODEL:
     with open('./LSTM_model', 'rb') as file:
         history = pickle.load(file)
+        model = history.model
 else:
-    model = Run_LSTM(X_train, layer_units=layer_units)
+    model = Run_LSTM(X_train)
     history = model.fit(
         X_train,
         y_train,
-        epochs=cur_epochs,
-        batch_size=cur_batch_size,
+        epochs=cur_LSTM_args['epochs'],
+        batch_size=cur_LSTM_args['batch_size'],
         verbose=1,
         validation_split=0.1,
-        shuffle=True,
     )
     with open('./LSTM_model', 'wb') as file:
         pickle.dump(history, file)
 
-# predict stock prices using past window_size stock prices
-def preprocess_testdat(data=stockprices, scaler=scaler, window_size=window_size, test=test):
-    raw = data[len(data) - len(test) - window_size:].values
-    raw = raw.reshape(-1,1)
-    raw = scaler.transform(raw)
+# ------------ predict stock prices using past window_size stock prices ------------
+scaled_data_test = scaled_data[-test.shape[0]-window_size:]
+X_test, y_test = extract_seqX_outcomeY(scaled_data_test, N_lookback=window_size)
 
-    X_test = [raw[i-window_size:i, 0] for i in range(window_size, raw.shape[0])]
-    X_test = np.array(X_test)
+predicted_price_ = model.predict(X_test)
+predicted_price = pd.DataFrame()
+predicted_price = scalers['Close'].inverse_transform(predicted_price_)
 
-    X_test = np.reshape(X_test, (X_test.shape[0], X_test.shape[1], 1))
-    return X_test
+# ------------ Plot predicted prices ------------
 
-X_test = preprocess_testdat()
+plt.figure()
+plt.plot(predicted_price, ':', label = 'LSTM')
+plt.plot(test['Close'].values, '--', label = 'Actual')
+plt.legend()
+plt.savefig("predicted_prices_1d")
 
-predicted_price_ = model.predict(X_test[0].reshape(1, X_test.shape[1], 1))
-predicted_price = scaler.inverse_transform(predicted_price_)
+# ------------ Calculate and plot forecasted prices ------------
 
-# Plot predicted price vs actual closing price
-# test["Predictions_lstm"] = predicted_price
-index = test.index[:N_forecast]
-# close = test['Close'][:N_forecast]
+print("Calculating forecasts...")
+X_forecast = np.array(scaled_data_test.copy())[:window_size+100]  # Create a copy of the scaled test data to start with
+actual = np.array(scaled_data_test.copy())[:window_size+100]
+for i in range(window_size, len(X_forecast)):  # Iterate through each day
+    t = X_forecast[i-window_size:i]
+    X_forecast_input = t.reshape((1, window_size, X_forecast.shape[1]))
+    X_forecast[i] = model.predict(X_forecast_input)  # Assign the next day's predicted price in the corrresponding position
 
-test = pd.DataFrame({
-    'Close' : stockprices[train_size : train_size + N_forecast]["Close"],
-    'Predictions_lstm' : predicted_price.reshape(-1)
-}, index=index)
+X_forecast = scalers['Close'].inverse_transform(X_forecast)
+actual = scalers['Close'].inverse_transform(actual)
+plt.figure()
+plt.plot(X_forecast[:,0], ':', label = 'LSTM')
+plt.plot(actual[:,0], '--', label = 'Actual')
+plt.legend()
+plt.savefig("predicted_prices_forecast")
 
-# Evaluate performance
-rmse_lstm = calculate_rmse(np.array(test["Close"]), np.array(test["Predictions_lstm"]))
-mape_lstm = calculate_mape(np.array(test["Close"]), np.array(test["Predictions_lstm"]))
+preds = pd.DataFrame({
+    'Close': test['Close'],
+    'volume': test['volume'],
+    'pred': predicted_price.reshape(-1)
+}).to_csv("predictions.csv")
 
-### Plot prediction and true trends
-# q = train["Close"][len(train) - window_size:]
-def plot_stock_trend_lstm(train, test):
-    fig = plt.figure(figsize = (20,10))
-    plt.plot(np.asarray(train.index[len(train) - window_size:]), np.asarray(train["Close"][len(train) - window_size:]), label = "Train Closing Price")
-    plt.plot(np.asarray(test.index), np.asarray(test["Close"]), label = "Test Closing Price")
-    plt.plot(np.asarray(test.index), np.asarray(test["Predictions_lstm"]), label = "Predicted Closing Price")
-    plt.title("LSTM Model")
-    plt.xlabel("Date")
-    plt.ylabel("Stock Price ($)")
-    plt.legend(loc="upper left")
-
-plot_stock_trend_lstm(train, test)
+print("Done!")
