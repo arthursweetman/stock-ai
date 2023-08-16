@@ -17,14 +17,17 @@ from sklearn.preprocessing import StandardScaler, MinMaxScaler
 from keras import Input, Model, Sequential, optimizers
 from keras.layers import LSTM, Dense, Dropout
 import pickle
+
+import optimize
 import stock_API
+from plots import tomorrow_pred_v_today_close
 
 
 # ------------ Global variables ------------
 predictor_vars = ['Close', 'volume', 'VIX', 'USDX', 'EFFR', 'UNRATE', 'UMCSENT']
 window_size = 50
 N_forecast = 20
-USE_CACHED_MODEL = False
+USE_CACHED_MODEL = True
 
 cur_LSTM_args = {
     "units": 150,
@@ -38,7 +41,7 @@ stockprices = stock_API.data
 stockprices.rename(columns = {'adjclose' : 'Close'}, inplace = True)
 stockprices = stockprices[predictor_vars]
 
-test_ratio = 0.01
+test_ratio = 0.03
 training_ratio = 1 - test_ratio
 
 train_size = int(training_ratio * len(stockprices))
@@ -55,10 +58,13 @@ def extract_seqX_outcomeY(data, N_lookback):
     """
     Split time-series into training sequence X and outcome values Y
     Args:
-        data - dataset
-        N - window size, e.g., 50 for 50 days of historical stock prices
+        data: dataset
+        N_lookback: window size, e.g., 50 for 50 days of historical stock prices
         (discontinued) N_forecast - number of days to predict in the future
         (discontinued) offset - position to start the split
+
+    Returns:
+        An n-dimensional array of past N_lookback days with all predictor vars and an array of all next-day closing prices
     """
     X, y = [], []
 
@@ -73,10 +79,12 @@ def extract_seqX_outcomeY(data, N_lookback):
 scalers = {}
 scaled_data = pd.DataFrame()
 for col in stockprices:  # Consider scaling only to training data
+    # Also consider scaling to an exponential distribution (for closing price)
     scaler = MinMaxScaler().fit(stockprices[[col]])
     scaled_data[[col]] = scaler.transform(stockprices[[col]])
     scalers[col] = scaler
 
+scaled_data.index = stockprices.index
 scaled_data_train = scaled_data[: train.shape[0]]
 
 # We use past 50 days’ stock prices for our training to predict the 51st day's closing price.
@@ -121,11 +129,34 @@ scaled_data_test = scaled_data[-test.shape[0]-window_size:]
 X_test, y_test = extract_seqX_outcomeY(scaled_data_test, N_lookback=window_size)
 
 predicted_price_ = model.predict(X_test)
-predicted_price = pd.DataFrame()
+# predicted_price = pd.DataFrame()
 predicted_price = scalers['Close'].inverse_transform(predicted_price_)
+predicted_price = pd.DataFrame(predicted_price, index=test.index)
 
 # ------------ Plot predicted prices ------------
 
+def tomorrow_pred_today_close(data, predictions):
+    index = np.copy(predictions.index)
+    newdat = predictions.copy()
+    newdat.loc[len(index)] = np.nan  # model.predict ?
+    newdat['temp'] = range(0, len(newdat))
+    newdat = newdat.loc[newdat['temp'] != 0]  # drop the first row
+    newdat = newdat.drop(columns='temp')
+    newdat.index = index
+    newdat = newdat.rename(columns={0: 'next_day_pred'})
+    data = data.join(newdat)
+    return data.dropna()
+
+# tptc = Tomorrow's Prediction on Today's close
+tptc = tomorrow_pred_today_close(test, predicted_price)
+# optimize.calculate_performance(tptc)
+tptc.to_csv("tptc.csv")
+
+
+# Today's Close v Tomorrow's predictied close
+tomorrow_pred_v_today_close(test, predicted_price)
+
+# Today's close v Today's predicted close
 plt.figure()
 plt.plot(predicted_price, ':', label = 'LSTM')
 plt.plot(test['Close'].values, '--', label = 'Actual')
@@ -150,9 +181,8 @@ plt.plot(actual[:,0], '--', label = 'Actual')
 plt.legend()
 plt.savefig("predicted_prices_forecast")
 
-# preds = pd.DataFrame({
+# pd.DataFrame({
 #     'Close': test['Close'],
-#     'volume': test['volume'],
 #     'pred': predicted_price.reshape(-1)
 # }).to_csv("predictions.csv")
 
