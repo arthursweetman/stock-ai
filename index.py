@@ -21,10 +21,10 @@ import stock_API
 
 
 # ------------ Global variables ------------
-predictor_vars = ['Close', 'volume', 'VIX', 'USDX', 'EFFR']
+predictor_vars = ['Close', 'volume', 'VIX', 'USDX', 'EFFR', 'UNRATE', 'UMCSENT']
 window_size = 50
 N_forecast = 20
-USE_CACHED_MODEL = True
+USE_CACHED_MODEL = False
 
 cur_LSTM_args = {
     "units": 150,
@@ -38,7 +38,7 @@ stockprices = stock_API.data
 stockprices.rename(columns = {'adjclose' : 'Close'}, inplace = True)
 stockprices = stockprices[predictor_vars]
 
-test_ratio = 0.2
+test_ratio = 0.01
 training_ratio = 1 - test_ratio
 
 train_size = int(training_ratio * len(stockprices))
