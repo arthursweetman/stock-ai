@@ -24,7 +24,7 @@ from plots import tomorrow_pred_v_today_close
 
 
 # ------------ Global variables ------------
-predictor_vars = ['Close', 'volume', 'VIX', 'USDX', 'EFFR', 'UNRATE', 'UMCSENT']
+predictor_vars = ['Close', 'volume', 'VIX', 'USDX', 'EFFR', 'UNRATE', 'UMCSENT', 'MACD', 'ATR', 'RSI']
 window_size = 50
 N_forecast = 20
 USE_CACHED_MODEL = True
@@ -33,11 +33,11 @@ cur_LSTM_args = {
     "units": 150,
     "optimizer": "adagrad",
     "batch_size": 16,
-    "epochs": 2
+    "epochs": 5
 }
 
 # ------------ Train-Test split for time-series ------------
-stockprices = stock_API.data
+stockprices = stock_API.retreive_data("SPY", start_date="01/01/2001")
 stockprices.rename(columns = {'adjclose' : 'Close'}, inplace = True)
 stockprices = stockprices[predictor_vars]
 
@@ -84,6 +84,10 @@ for col in stockprices:  # Consider scaling only to training data
     scaled_data[[col]] = scaler.transform(stockprices[[col]])
     scalers[col] = scaler
 
+# Save these scalers on the disk for re-use in testing
+with open('./scalers', 'wb') as file:
+    pickle.dump(scalers, file)
+
 scaled_data.index = stockprices.index
 scaled_data_train = scaled_data[: train.shape[0]]
 
@@ -129,7 +133,6 @@ scaled_data_test = scaled_data[-test.shape[0]-window_size:]
 X_test, y_test = extract_seqX_outcomeY(scaled_data_test, N_lookback=window_size)
 
 predicted_price_ = model.predict(X_test)
-# predicted_price = pd.DataFrame()
 predicted_price = scalers['Close'].inverse_transform(predicted_price_)
 predicted_price = pd.DataFrame(predicted_price, index=test.index)
 

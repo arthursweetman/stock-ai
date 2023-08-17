@@ -8,8 +8,6 @@ import requests
 import numpy as np
 import pandas as pd
 
-start_date = "01/01/2001"
-ticker = "SPY"
 
 FRED_API_KEY = "492c019400f8f7963ee131c745be7685"
 # TAAPI_API_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJjbHVlIjoiNjRkZTQzNDk0OThkNzVkYTM2ZTcxMzljIiwiaWF0IjoxNjkyMjg5NTU2LCJleHAiOjMzMTk2NzUzNTU2fQ.zkDmgI6goChvasL7PEuUaL2RGdIEXE_I-FaowG0A13E"
@@ -51,44 +49,58 @@ def get_technical_indicator(params, symbol):
 def fred_date_format(old_format):
     return old_format[6:10] + "-" + old_format[0:2] + "-" + old_format[3:5]
 
-pricedat = get_data(ticker,
-                  start_date = start_date,
-                  index_as_date = True,
-                  interval="1d")
+def retreive_data(ticker, start_date):
+    """
 
-VIX = get_data("^VIX",
-                start_date = start_date,
-                index_as_date = True,
-                interval="1d")[['close']].rename(columns={'close':'VIX'})
+    Args:
+        ticker: Stock ticker you want to get data for
+        start_date: Date you want to begin retrieving daily data from
 
-USDX = get_data("DX-Y.NYB",
-                start_date = start_date,
-                index_as_date = True,
-                interval="1d")[['close']].rename(columns={'close':'USDX'})
+    Returns:
+        Pandas dataframe of daily closing prices of ticker, along with macroeconomic data and technical indicators
 
-EFFR = pf.get_series(series_id = "EFFR",
-                     api_key = FRED_API_KEY,
-                     observation_start = fred_date_format(start_date))[['date','value']].set_index('date').rename(columns={'value':'EFFR'})
+    """
+    pricedat = get_data(ticker,
+                      start_date = start_date,
+                      index_as_date = True,
+                      interval="1d")
 
-UNRATE = pf.get_series(series_id = "UNRATE",
-                       api_key = FRED_API_KEY,
-                       observation_start = fred_date_format(start_date))[['date','value']].set_index('date').rename(columns={'value':'UNRATE'})
+    VIX = get_data("^VIX",
+                    start_date = start_date,
+                    index_as_date = True,
+                    interval="1d")[['close']].rename(columns={'close':'VIX'})
 
-UMCSENT = pf.get_series(series_id = "UMCSENT",
-                        api_key = FRED_API_KEY,
-                        observation_start = fred_date_format(start_date))[['date','value']].set_index('date').rename(columns={'value':'UMCSENT'})
+    USDX = get_data("DX-Y.NYB",
+                    start_date = start_date,
+                    index_as_date = True,
+                    interval="1d")[['close']].rename(columns={'close':'USDX'})
 
-MACD = get_technical_indicator(macd_params, ticker)[['MACD']]
-ATR = get_technical_indicator(atr_params, ticker)
-RSI = get_technical_indicator(rsi_params, ticker)
+    EFFR = pf.get_series(series_id = "EFFR",
+                         api_key = FRED_API_KEY,
+                         observation_start = fred_date_format(start_date))[['date','value']].set_index('date').rename(columns={'value':'EFFR'})
 
-MACD.index = pd.to_datetime(MACD.index)
-ATR.index = pd.to_datetime(ATR.index)
-RSI.index = pd.to_datetime(RSI.index)
+    UNRATE = pf.get_series(series_id = "UNRATE",
+                           api_key = FRED_API_KEY,
+                           observation_start = fred_date_format(start_date))[['date','value']].set_index('date').rename(columns={'value':'UNRATE'})
 
-__monthly = pricedat.join([UNRATE, UMCSENT], how="outer")[['UNRATE', 'UMCSENT']].ffill()
-data = pricedat.join([VIX, USDX, EFFR, __monthly, MACD, ATR, RSI]).dropna()
+    UMCSENT = pf.get_series(series_id = "UMCSENT",
+                            api_key = FRED_API_KEY,
+                            observation_start = fred_date_format(start_date))[['date','value']].set_index('date').rename(columns={'value':'UMCSENT'})
+
+    MACD = get_technical_indicator(macd_params, ticker)[['MACD']]
+    ATR = get_technical_indicator(atr_params, ticker)
+    RSI = get_technical_indicator(rsi_params, ticker)
+
+    MACD.index = pd.to_datetime(MACD.index)
+    ATR.index = pd.to_datetime(ATR.index)
+    RSI.index = pd.to_datetime(RSI.index)
+
+    __monthly = pricedat.join([UNRATE, UMCSENT], how="outer")[['UNRATE', 'UMCSENT']].ffill()
+    data = pricedat.join([VIX, USDX, EFFR, __monthly, MACD, ATR, RSI]).dropna()
+    return data
 
 
 if __name__ == "__main__":
-    pass
+    start_date = "01/01/2001"
+    ticker = "SPY"
+    retreive_data(ticker, start_date)
